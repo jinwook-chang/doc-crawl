@@ -11,7 +11,6 @@ downloaded locally and wired back into the saved Markdown.
 - Logs in to a website with Playwright.
 - Crawls the configured base URL and same-domain internal links up to a depth limit.
 - Converts rendered HTML to Markdown with Docling.
-- Optionally converts only a selected content area, such as `main` or `article`.
 - Downloads page images into a local `assets/` directory.
 - Replaces Docling image placeholders with local Markdown image links.
 - Clears the output directory on each run so it always contains the latest crawl.
@@ -41,7 +40,6 @@ USERNAME_SELECTOR=input[name="email"]
 PASSWORD_SELECTOR=input[name="password"]
 SUBMIT_SELECTOR=button[type="submit"]
 
-CONTENT_SELECTOR=main
 CRAWL_MAX_DEPTH=0
 OUTPUT_DIR=markdown
 ASSETS_DIR=assets
@@ -65,7 +63,6 @@ uv run crawl_to_markdown.py
 | `USERNAME_SELECTOR` | No | Common email/username selectors | Playwright selector for the username field. |
 | `PASSWORD_SELECTOR` | No | Common password selectors | Playwright selector for the password field. |
 | `SUBMIT_SELECTOR` | No | Common submit button selectors | Playwright selector for the login button. |
-| `CONTENT_SELECTOR` | No | Full rendered page | Optional selector for the content area to convert with Docling. |
 | `CRAWL_MAX_DEPTH` | No | `0` | Crawl depth. `0` saves only `CRAWL_URL`; `1` also saves links found on that page. |
 | `OUTPUT_DIR` | No | `markdown` | Output directory. It is cleared at the start of each run. |
 | `ASSETS_DIR` | No | `assets` | Image asset directory inside `OUTPUT_DIR`. |
@@ -102,7 +99,6 @@ uv run ruff check .
 - Playwright로 로그인합니다.
 - 로그인 후 설정한 base URL과 같은 도메인의 내부 링크를 지정한 depth까지 크롤링합니다.
 - 렌더링된 HTML을 Docling으로 Markdown 변환합니다.
-- `main`, `article` 같은 특정 본문 영역만 변환하도록 지정할 수 있습니다.
 - 페이지 이미지를 로컬 `assets/` 디렉터리에 다운로드합니다.
 - Docling 이미지 placeholder를 로컬 Markdown 이미지 링크로 바꿉니다.
 - 실행할 때마다 출력 디렉터리를 비워 최신 결과만 남깁니다.
@@ -132,7 +128,6 @@ USERNAME_SELECTOR=input[name="email"]
 PASSWORD_SELECTOR=input[name="password"]
 SUBMIT_SELECTOR=button[type="submit"]
 
-CONTENT_SELECTOR=main
 CRAWL_MAX_DEPTH=0
 OUTPUT_DIR=markdown
 ASSETS_DIR=assets
@@ -156,7 +151,6 @@ uv run crawl_to_markdown.py
 | `USERNAME_SELECTOR` | 아니오 | 일반적인 아이디/이메일 selector | 아이디 입력칸의 Playwright selector입니다. |
 | `PASSWORD_SELECTOR` | 아니오 | 일반적인 비밀번호 selector | 비밀번호 입력칸의 Playwright selector입니다. |
 | `SUBMIT_SELECTOR` | 아니오 | 일반적인 submit 버튼 selector | 로그인 버튼의 Playwright selector입니다. |
-| `CONTENT_SELECTOR` | 아니오 | 전체 렌더링 페이지 | Docling으로 변환할 본문 영역 selector입니다. |
 | `CRAWL_MAX_DEPTH` | 아니오 | `0` | 크롤링 depth입니다. `0`은 `CRAWL_URL`만 저장하고, `1`은 해당 페이지에서 발견한 링크까지 저장합니다. |
 | `OUTPUT_DIR` | 아니오 | `markdown` | 결과 저장 디렉터리입니다. 실행 시작 시 비워집니다. |
 | `ASSETS_DIR` | 아니오 | `assets` | `OUTPUT_DIR` 안에 생성되는 이미지 저장 디렉터리입니다. |

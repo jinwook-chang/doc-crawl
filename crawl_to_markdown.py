@@ -16,7 +16,6 @@ Optional:
   USERNAME_SELECTOR=input[name="email"]
   PASSWORD_SELECTOR=input[name="password"]
   SUBMIT_SELECTOR=button[type="submit"]
-  CONTENT_SELECTOR=main
   CRAWL_MAX_DEPTH=0
   OUTPUT_DIR=markdown
   ASSETS_DIR=assets
@@ -220,22 +219,7 @@ def html_to_markdown(converter: DocumentConverter, html: str, source_name: str) 
     return result.document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)
 
 
-async def extract_rendered_content(page: Page, content_selector: str | None) -> dict:
-    if content_selector:
-        locator = page.locator(content_selector).first
-        if await locator.count() == 0:
-            raise RuntimeError(f"CONTENT_SELECTOR did not match anything: {content_selector}")
-        return await locator.evaluate(
-            """element => ({
-                html: element.outerHTML,
-                links: Array.from(element.querySelectorAll('a[href]')).map(a => a.href),
-                images: Array.from(element.querySelectorAll('img[src]')).map(img => ({
-                    src: img.currentSrc || img.src,
-                    alt: img.alt || ''
-                }))
-            })"""
-        )
-
+async def extract_rendered_content(page: Page) -> dict:
     html = await page.content()
     links = await page.eval_on_selector_all("a[href]", "links => links.map(a => a.href)")
     images = await page.eval_on_selector_all(
@@ -347,7 +331,6 @@ async def main() -> None:
     reset_output_dir(output_dir)
 
     assets_dir_name = os.getenv("ASSETS_DIR", "assets")
-    content_selector = os.getenv("CONTENT_SELECTOR") or None
     max_depth = max(0, env_int("CRAWL_MAX_DEPTH", 0))
     profile_dir = os.getenv("USER_DATA_DIR", str(Path(".playwright-profile").resolve()))
     headless = env_bool("HEADLESS", True)
@@ -380,7 +363,7 @@ async def main() -> None:
                 await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_load_state("networkidle", timeout=30000)
 
-                content = await extract_rendered_content(page, content_selector)
+                content = await extract_rendered_content(page)
                 page_index = saved + 1
                 page_stem = safe_stem(url, page_index)
                 markdown = html_to_markdown(converter, content["html"], f"{page_stem}.html")
