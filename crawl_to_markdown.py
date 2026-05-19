@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Crawl a login-protected site with Crawl4AI and save pages as Markdown.
+Crawl a login-protected site with Playwright and convert rendered HTML to Markdown with Docling.
 
 Install:
   uv sync --dev
-  uv run crawl4ai-setup
+  uv run playwright install chromium
 
 .env example:
   CRAWL_URL=https://a.com
@@ -16,6 +16,7 @@ Optional:
   USERNAME_SELECTOR=input[name="email"]
   PASSWORD_SELECTOR=input[name="password"]
   SUBMIT_SELECTOR=button[type="submit"]
+  CONTENT_SELECTOR=main
   CRAWL_MAX_DEPTH=0
   OUTPUT_DIR=markdown
   ASSETS_DIR=assets
@@ -37,12 +38,14 @@ import os
 import re
 import shutil
 from collections.abc import Iterable
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import httpx
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
-from playwright.async_api import BrowserContext, Page
+from docling.document_converter import DocumentConverter
+from docling_core.types.io import DocumentStream
+from playwright.async_api import Page, async_playwright
 
 DEFAULT_USERNAME_SELECTORS = [
     'input[name="email"]',
@@ -67,6 +70,8 @@ DEFAULT_SUBMIT_SELECTORS = [
     'button:has-text("Sign in")',
     'button:has-text("Login")',
 ]
+
+IMAGE_PLACEHOLDER = "<!-- image -->"
 
 
 def load_env(path: Path = Path(".env")) -> None:
@@ -199,11 +204,6 @@ def image_extension(url: str, content_type: str | None) -> str:
     return ".img"
 
 
-def iter_markdown_images(markdown: str) -> Iterable[re.Match[str]]:
-    pattern = r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+['\"][^'\"]*['\"])?\)"
-    return re.finditer(pattern, markdown)
-
-
 def apply_cookie_state(client: httpx.AsyncClient, cookies: list[dict]) -> None:
     for cookie in cookies:
         name = cookie.get("name")
@@ -214,33 +214,74 @@ def apply_cookie_state(client: httpx.AsyncClient, cookies: list[dict]) -> None:
             client.cookies.set(name, value, domain=domain, path=path)
 
 
-async def localize_markdown_images(
-    markdown: str,
+def html_to_markdown(converter: DocumentConverter, html: str, source_name: str) -> str:
+    stream = DocumentStream(name=source_name, stream=BytesIO(html.encode("utf-8")))
+    result = converter.convert(stream)
+    return result.document.export_to_markdown(image_placeholder=IMAGE_PLACEHOLDER)
+
+
+async def extract_rendered_content(page: Page, content_selector: str | None) -> dict:
+    if content_selector:
+        locator = page.locator(content_selector).first
+        if await locator.count() == 0:
+            raise RuntimeError(f"CONTENT_SELECTOR did not match anything: {content_selector}")
+        return await locator.evaluate(
+            """element => ({
+                html: element.outerHTML,
+                links: Array.from(element.querySelectorAll('a[href]')).map(a => a.href),
+                images: Array.from(element.querySelectorAll('img[src]')).map(img => ({
+                    src: img.currentSrc || img.src,
+                    alt: img.alt || ''
+                }))
+            })"""
+        )
+
+    html = await page.content()
+    links = await page.eval_on_selector_all("a[href]", "links => links.map(a => a.href)")
+    images = await page.eval_on_selector_all(
+        "img[src]",
+        """images => images.map(img => ({
+            src: img.currentSrc || img.src,
+            alt: img.alt || ''
+        }))""",
+    )
+    return {"html": html, "links": links, "images": images}
+
+
+def extract_internal_links(seed_url: str, page_url: str, links: Iterable[str]) -> list[str]:
+    urls: list[str] = []
+    for href in links:
+        url = normalize_url(page_url, href)
+        if url and same_site(seed_url, url):
+            urls.append(url)
+    return urls
+
+
+async def download_images(
+    images: list[dict],
     page_url: str,
     output_dir: Path,
     assets_dir_name: str,
     page_stem: str,
     cookies: list[dict],
-) -> str:
-    matches = list(iter_markdown_images(markdown))
-    if not matches:
-        return markdown
+) -> list[str]:
+    if not images:
+        return []
 
     page_assets_dir = output_dir / assets_dir_name / page_stem
     page_assets_dir.mkdir(parents=True, exist_ok=True)
-    replacements: dict[str, str] = {}
+    markdown_images: list[str] = []
+    seen: set[str] = set()
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         apply_cookie_state(client, cookies)
 
-        for match in matches:
-            original_url = match.group(2).strip("<>")
-            if original_url in replacements:
+        for image in images:
+            raw_url = str(image.get("src") or "")
+            absolute_url = normalize_url(page_url, raw_url)
+            if not absolute_url or absolute_url in seen:
                 continue
-
-            absolute_url = normalize_url(page_url, original_url)
-            if not absolute_url or absolute_url.startswith("data:"):
-                continue
+            seen.add(absolute_url)
 
             try:
                 response = await client.get(absolute_url)
@@ -255,38 +296,43 @@ async def localize_markdown_images(
             image_path.write_bytes(response.content)
 
             relative_path = image_path.relative_to(output_dir).as_posix()
-            replacements[original_url] = relative_path
+            alt_text = str(image.get("alt") or image_path.stem).replace("\n", " ").strip()
+            markdown_images.append(f"![{alt_text}]({relative_path})")
             print(f"[image] {absolute_url} -> {relative_path}")
 
-    def replace_match(match: re.Match[str]) -> str:
-        alt_text = match.group(1)
-        original_url = match.group(2).strip("<>")
-        replacement = replacements.get(original_url)
-        if not replacement:
-            return match.group(0)
-        return f"![{alt_text}]({replacement})"
-
-    pattern = r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+['\"][^'\"]*['\"])?\)"
-    return re.sub(pattern, replace_match, markdown)
+    return markdown_images
 
 
-def extract_internal_links(seed_url: str, result) -> list[str]:
-    links = getattr(result, "links", None) or {}
-    raw_links = []
+def replace_image_placeholders(markdown: str, markdown_images: list[str]) -> str:
+    if not markdown_images:
+        return markdown
 
-    if isinstance(links, dict):
-        raw_links = links.get("internal") or links.get("all") or []
-    elif isinstance(links, list):
-        raw_links = links
+    remaining = iter(markdown_images)
 
-    urls: list[str] = []
-    for item in raw_links:
-        href = item.get("href") if isinstance(item, dict) else str(item)
-        url = normalize_url(seed_url, href)
-        if url and same_site(seed_url, url):
-            urls.append(url)
+    def replace_once(match: re.Match[str]) -> str:
+        return next(remaining, match.group(0))
 
-    return urls
+    return re.sub(re.escape(IMAGE_PLACEHOLDER), replace_once, markdown)
+
+
+async def login(page: Page, login_url: str, username: str, password: str) -> None:
+    print(f"[login] opening {login_url}")
+    await page.goto(login_url, wait_until="domcontentloaded")
+    await fill_first(
+        page,
+        selectors("USERNAME_SELECTOR", DEFAULT_USERNAME_SELECTORS),
+        username,
+        "username",
+    )
+    await fill_first(
+        page,
+        selectors("PASSWORD_SELECTOR", DEFAULT_PASSWORD_SELECTORS),
+        password,
+        "password",
+    )
+    await click_first(page, selectors("SUBMIT_SELECTOR", DEFAULT_SUBMIT_SELECTORS))
+    await page.wait_for_load_state("networkidle", timeout=30000)
+    print("[login] complete")
 
 
 async def main() -> None:
@@ -299,100 +345,67 @@ async def main() -> None:
     login_url = os.getenv("LOGIN_URL", crawl_url)
     output_dir = Path(os.getenv("OUTPUT_DIR", "markdown"))
     reset_output_dir(output_dir)
+
     assets_dir_name = os.getenv("ASSETS_DIR", "assets")
-
+    content_selector = os.getenv("CONTENT_SELECTOR") or None
     max_depth = max(0, env_int("CRAWL_MAX_DEPTH", 0))
-    session_id = os.getenv("CRAWL_SESSION_ID", "crawl4ai-login-session")
-    profile_dir = os.getenv("USER_DATA_DIR", str(Path(".crawl4ai-profile").resolve()))
+    profile_dir = os.getenv("USER_DATA_DIR", str(Path(".playwright-profile").resolve()))
+    headless = env_bool("HEADLESS", True)
 
-    did_login = False
-    auth_cookies: list[dict] = []
-
-    async def login_hook(page: Page, context: BrowserContext, **kwargs) -> Page:
-        nonlocal auth_cookies, did_login
-        if did_login:
-            return page
-
-        print(f"[login] opening {login_url}")
-        await page.goto(login_url, wait_until="domcontentloaded")
-
-        await fill_first(
-            page,
-            selectors("USERNAME_SELECTOR", DEFAULT_USERNAME_SELECTORS),
-            username,
-            "username",
-        )
-        await fill_first(
-            page,
-            selectors("PASSWORD_SELECTOR", DEFAULT_PASSWORD_SELECTORS),
-            password,
-            "password",
-        )
-        await click_first(page, selectors("SUBMIT_SELECTOR", DEFAULT_SUBMIT_SELECTORS))
-        await page.wait_for_load_state("networkidle", timeout=30000)
-
-        auth_cookies = await context.cookies()
-        did_login = True
-        print("[login] complete")
-        return page
-
-    browser_config = BrowserConfig(
-        headless=env_bool("HEADLESS", True),
-        use_persistent_context=True,
-        user_data_dir=profile_dir,
-    )
-    run_config = CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,
-        session_id=session_id,
-        wait_for_images=True,
-    )
-
+    converter = DocumentConverter()
     queue = [(crawl_url, 0)]
     queued = {crawl_url}
     seen: set[str] = set()
     saved = 0
 
-    crawler = AsyncWebCrawler(config=browser_config)
-    crawler.crawler_strategy.set_hook("on_page_context_created", login_hook)
+    async with async_playwright() as playwright:
+        context = await playwright.chromium.launch_persistent_context(
+            user_data_dir=profile_dir,
+            headless=headless,
+        )
+        page = await context.new_page()
 
-    await crawler.start()
-    try:
-        while queue:
-            url, depth = queue.pop(0)
-            queued.discard(url)
-            if url in seen:
-                continue
-            seen.add(url)
+        try:
+            await login(page, login_url, username, password)
+            auth_cookies = await context.cookies()
 
-            print(f"[crawl] depth={depth} {url}")
-            result = await crawler.arun(url=url, config=run_config)
-            if not result.success:
-                print(f"[skip] {url}: {result.error_message}")
-                continue
+            while queue:
+                url, depth = queue.pop(0)
+                queued.discard(url)
+                if url in seen:
+                    continue
+                seen.add(url)
 
-            page_index = saved + 1
-            markdown = getattr(result, "markdown", "") or ""
-            output_path = output_dir / safe_filename(url, page_index)
-            markdown = await localize_markdown_images(
-                markdown=markdown,
-                page_url=url,
-                output_dir=output_dir,
-                assets_dir_name=assets_dir_name,
-                page_stem=safe_stem(url, page_index),
-                cookies=auth_cookies,
-            )
-            output_path.write_text(markdown, encoding="utf-8")
-            saved += 1
-            print(f"[save] {output_path}")
+                print(f"[crawl] depth={depth} {url}")
+                await page.goto(url, wait_until="domcontentloaded")
+                await page.wait_for_load_state("networkidle", timeout=30000)
 
-            if depth < max_depth:
-                for next_url in extract_internal_links(crawl_url, result):
-                    if next_url not in seen and next_url not in queued:
-                        queue.append((next_url, depth + 1))
-                        queued.add(next_url)
-    finally:
-        await crawler.crawler_strategy.kill_session(session_id)
-        await crawler.close()
+                content = await extract_rendered_content(page, content_selector)
+                page_index = saved + 1
+                page_stem = safe_stem(url, page_index)
+                markdown = html_to_markdown(converter, content["html"], f"{page_stem}.html")
+                markdown_images = await download_images(
+                    images=content["images"],
+                    page_url=url,
+                    output_dir=output_dir,
+                    assets_dir_name=assets_dir_name,
+                    page_stem=page_stem,
+                    cookies=auth_cookies,
+                )
+                markdown = replace_image_placeholders(markdown, markdown_images)
+
+                output_path = output_dir / safe_filename(url, page_index)
+                output_path.write_text(markdown, encoding="utf-8")
+                saved += 1
+                print(f"[save] {output_path}")
+
+                if depth < max_depth:
+                    for next_url in extract_internal_links(crawl_url, url, content["links"]):
+                        if next_url not in seen and next_url not in queued:
+                            queue.append((next_url, depth + 1))
+                            queued.add(next_url)
+        finally:
+            await context.close()
 
     print(f"[done] saved {saved} markdown file(s) to {output_dir}")
 

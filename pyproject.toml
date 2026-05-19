@@ -1,11 +1,12 @@
 [project]
 name = "doc-crawl"
 version = "0.1.0"
-description = "Crawl login-protected pages with Crawl4AI and save them as Markdown."
+description = "Crawl login-protected pages with Playwright and convert rendered HTML with Docling."
 requires-python = ">=3.10"
 dependencies = [
-    "crawl4ai>=0.8.0",
+    "docling>=2.94.0",
     "httpx>=0.28.0",
+    "playwright>=1.60.0",
 ]
 
 [dependency-groups]
