@@ -47,8 +47,8 @@ HEADLESS=false
 USER_DATA_DIR=.playwright-profile
 ```
 
-All runtime settings are read from `.env`. If any value is missing or empty, the
-script exits with an error.
+The script loads `.env` into `os.environ`. If any required value is missing or empty,
+the script exits with an error.
 
 ### Run
 
@@ -139,7 +139,7 @@ HEADLESS=false
 USER_DATA_DIR=.playwright-profile
 ```
 
-모든 실행 설정은 `.env`에서만 읽습니다. 값이 없거나 비어 있으면 스크립트가 오류를 내고 종료합니다.
+스크립트는 `.env` 값을 `os.environ`에 로드합니다. 필수 값이 없거나 비어 있으면 오류를 내고 종료합니다.
 
 ### 실행
 

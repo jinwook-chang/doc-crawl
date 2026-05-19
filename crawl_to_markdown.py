@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import mimetypes
+import os
 import re
 import shutil
 from collections.abc import Iterable
@@ -45,16 +46,12 @@ from docling_core.types.io import DocumentStream
 from playwright.async_api import Page, async_playwright
 
 IMAGE_PLACEHOLDER = "<!-- image -->"
-ENV: dict[str, str] = {}
 
 
 def load_env(path: Path = Path(".env")) -> None:
-    global ENV
-
     if not path.exists():
         raise SystemExit("Missing .env file")
 
-    values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -63,13 +60,11 @@ def load_env(path: Path = Path(".env")) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        values[key] = value
-
-    ENV = values
+        os.environ[key] = value
 
 
 def required_env(name: str) -> str:
-    value = ENV.get(name)
+    value = os.environ.get(name)
     if not value:
         raise SystemExit(f"Missing required env value: {name}")
     return value
