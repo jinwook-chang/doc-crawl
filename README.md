@@ -40,11 +40,15 @@ USERNAME_SELECTOR=input[name="email"]
 PASSWORD_SELECTOR=input[name="password"]
 SUBMIT_SELECTOR=button[type="submit"]
 
-CRAWL_MAX_DEPTH=0
+CRAWL_MAX_DEPTH=3
 OUTPUT_DIR=markdown
 ASSETS_DIR=assets
 HEADLESS=false
+USER_DATA_DIR=.playwright-profile
 ```
+
+All runtime settings are read from `.env`. If any value is missing or empty, the
+script exits with an error.
 
 ### Run
 
@@ -54,20 +58,20 @@ uv run crawl_to_markdown.py
 
 ### Configuration
 
-| Variable | Required | Default | Description |
-| --- | --- | --- | --- |
-| `CRAWL_URL` | Yes | - | Base URL to crawl after login. |
-| `LOGIN_URL` | No | `CRAWL_URL` | Login page URL. |
-| `CRAWL_USERNAME` | Yes | - | Username or email for login. |
-| `CRAWL_PASSWORD` | Yes | - | Password for login. |
-| `USERNAME_SELECTOR` | No | Common email/username selectors | Playwright selector for the username field. |
-| `PASSWORD_SELECTOR` | No | Common password selectors | Playwright selector for the password field. |
-| `SUBMIT_SELECTOR` | No | Common submit button selectors | Playwright selector for the login button. |
-| `CRAWL_MAX_DEPTH` | No | `0` | Crawl depth. `0` saves only `CRAWL_URL`; `1` also saves links found on that page. |
-| `OUTPUT_DIR` | No | `markdown` | Output directory. It is cleared at the start of each run. |
-| `ASSETS_DIR` | No | `assets` | Image asset directory inside `OUTPUT_DIR`. |
-| `HEADLESS` | No | `true` | Whether to run Chromium headlessly. |
-| `USER_DATA_DIR` | No | `.playwright-profile` | Persistent Playwright browser profile directory. |
+| Variable | Required | Description |
+| --- | --- | --- |
+| `CRAWL_URL` | Yes | Base URL to crawl after login. |
+| `LOGIN_URL` | Yes | Login page URL. |
+| `CRAWL_USERNAME` | Yes | Username or email for login. |
+| `CRAWL_PASSWORD` | Yes | Password for login. |
+| `USERNAME_SELECTOR` | Yes | Playwright selector for the username field. |
+| `PASSWORD_SELECTOR` | Yes | Playwright selector for the password field. |
+| `SUBMIT_SELECTOR` | Yes | Playwright selector for the login button. |
+| `CRAWL_MAX_DEPTH` | Yes | Crawl depth. `0` saves only `CRAWL_URL`; `1` also saves links found on that page. |
+| `OUTPUT_DIR` | Yes | Output directory. It is cleared at the start of each run. |
+| `ASSETS_DIR` | Yes | Image asset directory inside `OUTPUT_DIR`. |
+| `HEADLESS` | Yes | Whether to run Chromium headlessly. |
+| `USER_DATA_DIR` | Yes | Persistent Playwright browser profile directory. |
 
 ### How Conversion Works
 
@@ -128,11 +132,14 @@ USERNAME_SELECTOR=input[name="email"]
 PASSWORD_SELECTOR=input[name="password"]
 SUBMIT_SELECTOR=button[type="submit"]
 
-CRAWL_MAX_DEPTH=0
+CRAWL_MAX_DEPTH=3
 OUTPUT_DIR=markdown
 ASSETS_DIR=assets
 HEADLESS=false
+USER_DATA_DIR=.playwright-profile
 ```
+
+모든 실행 설정은 `.env`에서만 읽습니다. 값이 없거나 비어 있으면 스크립트가 오류를 내고 종료합니다.
 
 ### 실행
 
@@ -142,20 +149,20 @@ uv run crawl_to_markdown.py
 
 ### 설정
 
-| 변수 | 필수 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `CRAWL_URL` | 예 | - | 로그인 후 크롤링할 base URL입니다. |
-| `LOGIN_URL` | 아니오 | `CRAWL_URL` | 로그인 페이지 URL입니다. |
-| `CRAWL_USERNAME` | 예 | - | 로그인 아이디 또는 이메일입니다. |
-| `CRAWL_PASSWORD` | 예 | - | 로그인 비밀번호입니다. |
-| `USERNAME_SELECTOR` | 아니오 | 일반적인 아이디/이메일 selector | 아이디 입력칸의 Playwright selector입니다. |
-| `PASSWORD_SELECTOR` | 아니오 | 일반적인 비밀번호 selector | 비밀번호 입력칸의 Playwright selector입니다. |
-| `SUBMIT_SELECTOR` | 아니오 | 일반적인 submit 버튼 selector | 로그인 버튼의 Playwright selector입니다. |
-| `CRAWL_MAX_DEPTH` | 아니오 | `0` | 크롤링 depth입니다. `0`은 `CRAWL_URL`만 저장하고, `1`은 해당 페이지에서 발견한 링크까지 저장합니다. |
-| `OUTPUT_DIR` | 아니오 | `markdown` | 결과 저장 디렉터리입니다. 실행 시작 시 비워집니다. |
-| `ASSETS_DIR` | 아니오 | `assets` | `OUTPUT_DIR` 안에 생성되는 이미지 저장 디렉터리입니다. |
-| `HEADLESS` | 아니오 | `true` | Chromium을 headless로 실행할지 여부입니다. |
-| `USER_DATA_DIR` | 아니오 | `.playwright-profile` | 영속 Playwright 브라우저 프로필 디렉터리입니다. |
+| 변수 | 필수 | 설명 |
+| --- | --- | --- |
+| `CRAWL_URL` | 예 | 로그인 후 크롤링할 base URL입니다. |
+| `LOGIN_URL` | 예 | 로그인 페이지 URL입니다. |
+| `CRAWL_USERNAME` | 예 | 로그인 아이디 또는 이메일입니다. |
+| `CRAWL_PASSWORD` | 예 | 로그인 비밀번호입니다. |
+| `USERNAME_SELECTOR` | 예 | 아이디 입력칸의 Playwright selector입니다. |
+| `PASSWORD_SELECTOR` | 예 | 비밀번호 입력칸의 Playwright selector입니다. |
+| `SUBMIT_SELECTOR` | 예 | 로그인 버튼의 Playwright selector입니다. |
+| `CRAWL_MAX_DEPTH` | 예 | 크롤링 depth입니다. `0`은 `CRAWL_URL`만 저장하고, `1`은 해당 페이지에서 발견한 링크까지 저장합니다. |
+| `OUTPUT_DIR` | 예 | 결과 저장 디렉터리입니다. 실행 시작 시 비워집니다. |
+| `ASSETS_DIR` | 예 | `OUTPUT_DIR` 안에 생성되는 이미지 저장 디렉터리입니다. |
+| `HEADLESS` | 예 | Chromium을 headless로 실행할지 여부입니다. |
+| `USER_DATA_DIR` | 예 | 영속 Playwright 브라우저 프로필 디렉터리입니다. |
 
 ### 변환 방식
 

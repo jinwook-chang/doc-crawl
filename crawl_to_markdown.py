@@ -8,18 +8,17 @@ Install:
 
 .env example:
   CRAWL_URL=https://a.com
+  LOGIN_URL=https://a.com/login
   CRAWL_USERNAME=you@example.com
   CRAWL_PASSWORD=secret
-
-Optional:
-  LOGIN_URL=https://a.com/login
   USERNAME_SELECTOR=input[name="email"]
   PASSWORD_SELECTOR=input[name="password"]
   SUBMIT_SELECTOR=button[type="submit"]
-  CRAWL_MAX_DEPTH=0
+  CRAWL_MAX_DEPTH=3
   OUTPUT_DIR=markdown
   ASSETS_DIR=assets
   HEADLESS=false
+  USER_DATA_DIR=.playwright-profile
 
 Run:
   uv run crawl_to_markdown.py
@@ -33,7 +32,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import mimetypes
-import os
 import re
 import shutil
 from collections.abc import Iterable
@@ -46,37 +44,17 @@ from docling.document_converter import DocumentConverter
 from docling_core.types.io import DocumentStream
 from playwright.async_api import Page, async_playwright
 
-DEFAULT_USERNAME_SELECTORS = [
-    'input[name="email"]',
-    'input[type="email"]',
-    'input[name="username"]',
-    'input[name="userId"]',
-    'input[id*="email" i]',
-    'input[id*="user" i]',
-]
-
-DEFAULT_PASSWORD_SELECTORS = [
-    'input[name="password"]',
-    'input[type="password"]',
-    'input[id*="password" i]',
-    'input[id*="pass" i]',
-]
-
-DEFAULT_SUBMIT_SELECTORS = [
-    'button[type="submit"]',
-    'input[type="submit"]',
-    'button:has-text("로그인")',
-    'button:has-text("Sign in")',
-    'button:has-text("Login")',
-]
-
 IMAGE_PLACEHOLDER = "<!-- image -->"
+ENV: dict[str, str] = {}
 
 
 def load_env(path: Path = Path(".env")) -> None:
-    if not path.exists():
-        return
+    global ENV
 
+    if not path.exists():
+        raise SystemExit("Missing .env file")
+
+    values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -85,38 +63,41 @@ def load_env(path: Path = Path(".env")) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        os.environ.setdefault(key, value)
+        values[key] = value
+
+    ENV = values
 
 
 def required_env(name: str) -> str:
-    value = os.getenv(name)
+    value = ENV.get(name)
     if not value:
         raise SystemExit(f"Missing required env value: {name}")
     return value
 
 
-def env_bool(name: str, default: bool) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+def required_env_bool(name: str) -> bool:
+    value = required_env(name).strip().lower()
+    if value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if value in {"0", "false", "no", "n", "off"}:
+        return False
+    raise SystemExit(f"{name} must be a boolean, got: {value}")
 
 
-def env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if not value:
-        return default
+def required_env_int(name: str) -> int:
+    value = required_env(name)
     try:
         return int(value)
     except ValueError as exc:
         raise SystemExit(f"{name} must be an integer, got: {value}") from exc
 
 
-def selectors(env_name: str, defaults: Iterable[str]) -> list[str]:
-    value = os.getenv(env_name)
-    if not value:
-        return list(defaults)
-    return [item.strip() for item in value.split(",") if item.strip()]
+def selectors(env_name: str) -> list[str]:
+    value = required_env(env_name)
+    values = [item.strip() for item in value.split(",") if item.strip()]
+    if not values:
+        raise SystemExit(f"{env_name} must contain at least one selector")
+    return values
 
 
 def reset_output_dir(output_dir: Path) -> None:
@@ -304,17 +285,17 @@ async def login(page: Page, login_url: str, username: str, password: str) -> Non
     await page.goto(login_url, wait_until="domcontentloaded")
     await fill_first(
         page,
-        selectors("USERNAME_SELECTOR", DEFAULT_USERNAME_SELECTORS),
+        selectors("USERNAME_SELECTOR"),
         username,
         "username",
     )
     await fill_first(
         page,
-        selectors("PASSWORD_SELECTOR", DEFAULT_PASSWORD_SELECTORS),
+        selectors("PASSWORD_SELECTOR"),
         password,
         "password",
     )
-    await click_first(page, selectors("SUBMIT_SELECTOR", DEFAULT_SUBMIT_SELECTORS))
+    await click_first(page, selectors("SUBMIT_SELECTOR"))
     await page.wait_for_load_state("networkidle", timeout=30000)
     print("[login] complete")
 
@@ -326,14 +307,14 @@ async def main() -> None:
     username = required_env("CRAWL_USERNAME")
     password = required_env("CRAWL_PASSWORD")
 
-    login_url = os.getenv("LOGIN_URL", crawl_url)
-    output_dir = Path(os.getenv("OUTPUT_DIR", "markdown"))
+    login_url = required_env("LOGIN_URL")
+    output_dir = Path(required_env("OUTPUT_DIR"))
     reset_output_dir(output_dir)
 
-    assets_dir_name = os.getenv("ASSETS_DIR", "assets")
-    max_depth = max(0, env_int("CRAWL_MAX_DEPTH", 0))
-    profile_dir = os.getenv("USER_DATA_DIR", str(Path(".playwright-profile").resolve()))
-    headless = env_bool("HEADLESS", True)
+    assets_dir_name = required_env("ASSETS_DIR")
+    max_depth = max(0, required_env_int("CRAWL_MAX_DEPTH"))
+    profile_dir = required_env("USER_DATA_DIR")
+    headless = required_env_bool("HEADLESS")
 
     converter = DocumentConverter()
     queue = [(crawl_url, 0)]
